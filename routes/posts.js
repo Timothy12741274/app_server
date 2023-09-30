@@ -23,7 +23,9 @@ router.post('/get', async (req, res) => {
 })
 
 router.get('/', async (req, res) => {
-    let { pageSize, pageCount, pointer } = req.query
+    let { pageSize, pageCount, pointer, userId } = req.query
+
+    userId = Number(userId)
 
     pageSize = Number(pageSize)
     pageCount = Number(pageCount)
@@ -31,9 +33,17 @@ router.get('/', async (req, res) => {
 
     const from = pageSize * pageCount - 1, to = pageSize * pageCount
 
-    const query = 'SELECT * FROM posts WHERE (user_id = $1) BETWEEN $2 AND $3'
+    console.log('from, to: ', from, to)
 
-    const values = [ Number(req.cookies.userId), from, to ]
+    // const query = 'SELECT * FROM posts WHERE (user_id = $1) BETWEEN $2 AND $3'
+
+    const query = `SELECT *
+FROM posts
+WHERE user_id = $1
+AND id BETWEEN (SELECT MAX(id) FROM posts) - $3 + 1 AND (SELECT MAX(id) FROM posts) - $2 + 1
+ORDER BY id DESC;`
+
+    const values = [ userId, from, to ]
 
     const { rows: posts } = await pool.query(query, values)
 

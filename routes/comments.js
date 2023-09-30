@@ -61,7 +61,7 @@ router.post('/', (req, res) => {
 })
 
 router.get('/', async (req, res) => {
-    let { commented_element_id, commented_element_type } = req.query
+    let { commented_element_id, commented_element_type, userId } = req.query
     commented_element_id = Number(commented_element_id)
 
     const query = 'SELECT * FROM comments WHERE (commented_element_id = $1) AND (commented_element_type = $2)'

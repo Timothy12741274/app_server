@@ -6,6 +6,8 @@ const router = new Router()
 router.post('/', async (req, res) => {
     const { email, password } = req.body
 
+
+
     const query = 'SELECT * FROM users WHERE email = $1'
 
     const values = [ email ]
@@ -27,5 +29,15 @@ router.post('/', async (req, res) => {
 
 
 })
+
+router.get('/:id', async (req, res) => {
+    const { id } = req.params
+
+    const { rows } = await pool.query(`SELECT * FROM users WHERE id = ${id}`)
+
+    return res.json(rows[0])
+})
+
+
 
 module.exports = router
