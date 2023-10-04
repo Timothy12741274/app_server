@@ -33,8 +33,6 @@ router.get('/', async (req, res) => {
 
     const from = pageSize * pageCount - 1, to = pageSize * pageCount
 
-    console.log('from, to: ', from, to)
-
     // const query = 'SELECT * FROM posts WHERE (user_id = $1) BETWEEN $2 AND $3'
 
     const query = `SELECT *

@@ -81,7 +81,6 @@ router.get('/get-users/:id', async (req, res) => {
 
 
     const { rows: users } = await pool.query(`SELECT * FROM users WHERE id IN (${ids}) OR id = ${id}`)
-    console.log('users1', users)
 
     const { rows: [ { found_user_from_search_ids } ] } = await pool.query(`SELECT * FROM users WHERE id = ${Number(req.cookies.userId)}`)
 
@@ -98,10 +97,8 @@ router.get('/get-users/:id', async (req, res) => {
                 }
                 return false
         })
-        console.log('i', allUsers)
         return res.json(allUsers)
     } else {
-        console.log('u', users)
         return res.json(users)
     }
 
@@ -119,7 +116,6 @@ router.get('/', async (req, res) => {
 router.put('/update-recent', async (req, res) => {
     const { ids } = req.body
 
-    console.log("ids", ids)
 
 
     // await pool.query(`UPDATE users SET found_user_from_search_ids = ARRAY${ids.join(',')} WHERE id = ${Number(req.cookies.userId)}`)
@@ -131,7 +127,6 @@ router.put('/update-recent', async (req, res) => {
 router.get('/find-users', async (req, res) => {
     const { v } = req.query
 
-    console.log('v', v)
 
     const query = {
         text: `
@@ -155,6 +150,27 @@ router.get('/find-users', async (req, res) => {
     return res.json(rows)
 
     return res.json(rows).status(200)
+})
+
+router.post('/:id/update-status', async (req, res) => {
+    const { isOnline } = req.body
+
+    const { id } = req.params
+
+
+    await pool.query(`UPDATE users SET is_online = ${isOnline} WHERE id = ${id}`)
+
+    return res.json().status(200)
+})
+
+router.get('/:id/get-user-status', async (req, res) => {
+    const { id } = req.params
+
+    const { rows: [ { is_online } ] } = await pool.query(`SELECT * FROM users WHERE id = ${id}`)
+
+    return res.json({ isOnline: is_online })
+
+
 })
 
 module.exports = router

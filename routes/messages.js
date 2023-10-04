@@ -23,7 +23,6 @@ router.get('/', async (req, res) => {
 
     const {rows: messages} = await pool.query(query, values);
 
-    console.log('m', messages)
     return res.json(messages)
 })
 
@@ -88,6 +87,17 @@ router.put('/:id', (req, res) => {
     pool.query(`UPDATE messages SET read = true WHERE id = ${id}`)
 
     return res.json().status(200)
+})
+
+router.get('/added-messages', async (req, res) => {
+    // console.log('max', req.query.max_message_id, 'id', )
+    const { rows } = await pool.query(`
+SELECT * FROM messages WHERE (from_user_id = ${req.cookies.userId} OR to_user_id = ${req.cookies.userId}) AND
+(id > ${req.query.max_message_id})
+`)
+    console.log(rows[0] && rows[0].id, '>', req.query.max_message_id)
+
+    return res.json(rows).status(200)
 })
 
 module.exports = router
