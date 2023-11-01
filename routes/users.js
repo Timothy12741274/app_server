@@ -1,7 +1,7 @@
 const Router = require('express').Router
 const pool = require('../db')
 const multer = require('multer')
-
+// const {savedUsers} = require('../variables')
 const router = new Router()
 
 const storage = multer.diskStorage({
@@ -46,6 +46,8 @@ router.get('/get-user/:id', async (req, res) => {
     return res.json( { user })
 })
 
+// let savedUsers
+
 router.get('/get-users/:id', async (req, res) => {
     let { id } = req.params
 
@@ -80,28 +82,77 @@ router.get('/get-users/:id', async (req, res) => {
     }
 
 
-    const { rows: users } = await pool.query(`SELECT * FROM users WHERE id IN (${ids}) OR id = ${id}`)
+    let { rows: users } = await pool.query(`SELECT * FROM users WHERE id IN (${ids}) OR id = ${id}`)
 
-    const { rows: [ { found_user_from_search_ids } ] } = await pool.query(`SELECT * FROM users WHERE id = ${Number(req.cookies.userId)}`)
+    let { rows: groups } = await pool.query(`SELECT * FROM groups WHERE ${id} IN user_ids`)
+
+    const { rows: [ { found_chat_from_search_ids } ] } = await pool.query(`SELECT * FROM users WHERE id = ${Number(req.cookies.userId)}`)
+
+    let found_user_from_search_ids = []
+    let found_group_from_search_ids = []
+
+    for (let i = 0; i < found_chat_from_search_ids.length; i++) {
+        const currChat = found_chat_from_search_ids[i]
+        if (currChat.isUser) found_user_from_search_ids.push(currChat.id)
+        else found_group_from_search_ids.push(currChat.id)
+    }
 
     if (found_user_from_search_ids.length !== 0) {
         const {rows: found_users_from_search} = await pool.query(`SELECT * FROM users WHERE id IN (${found_user_from_search_ids})`)
 
         const usernames = new Set()
 
-        const allUsers = [...users, ...found_users_from_search]
-            .filter(u => {
-                if (!usernames.has(u.username)) {
-                    usernames.add(u.username)
-                    return true
-                }
-                return false
-        })
-        return res.json(allUsers)
-    } else {
-        return res.json(users)
-    }
+        users.push(...found_users_from_search)
 
+        users = users.filter(u => {
+            if (!usernames.has(u.username)) {
+                usernames.add(u.username)
+                return true
+            }
+            return false
+        })
+
+        // const allUsers = [...users, ...found_users_from_search]
+        //     .filter(u => {
+        //         if (!usernames.has(u.username)) {
+        //             usernames.add(u.username)
+        //             return true
+        //         }
+        //         return false
+        // })
+        // savedUsers = allUsers
+        // return res.json(allUsers)
+    } /*else {*/
+        // savedUsers = users
+        // return res.json(users)
+    // }
+    if (found_group_from_search_ids.length !== 0) {
+        const { rows: found_groups_from_search } = await pool.query(`SELECT * FROM users WHERE id IN (${found_group_from_search_ids})`)
+
+        groups.push(...found_groups_from_search)
+
+        let groupIds = new Set()
+
+        groups = groups.filter(u => {
+            if (!groupIds.has(u.id)) {
+                groupIds.add(u.id)
+                return true
+            }
+            return false
+        })
+    }
+    global.savedUsers = users
+    console.log('savedUsers', global.savedUsers)
+    return res.json({ users, groups })
+
+})
+
+router.post('/get-users', async (req, res) => {
+    const { userIds } = req.body
+
+    const { rows } = await pool.query(`SELECT * FROM users WHERE id = ANY(${userIds})`)
+
+    return res.json(rows).status(200)
 })
 
 router.get('/', async (req, res) => {
@@ -117,9 +168,9 @@ router.put('/update-recent', async (req, res) => {
     const { ids } = req.body
 
 
-
+    console.log('ids', ids)
     // await pool.query(`UPDATE users SET found_user_from_search_ids = ARRAY${ids.join(',')} WHERE id = ${Number(req.cookies.userId)}`)
-    await pool.query(`UPDATE users SET found_user_from_search_ids = $1 WHERE id = $2`, [ids, req.cookies.userId])
+    await pool.query(`UPDATE users SET found_chat_from_search_ids = $1 WHERE id = $2`, [JSON.stringify(ids), req.cookies.userId])
 
     return res.json().status(200)
 })
@@ -157,19 +208,103 @@ router.post('/:id/update-status', async (req, res) => {
 
     const { id } = req.params
 
+    if (!isOnline) {
+        console.log(req.body.lastOnlineDate)
+        const query = 'UPDATE users SET last_online_date = $1 WHERE id = $2'
+        const values = [req.body.lastOnlineDate, id]
+
+        await pool.query(query, values)
+    }
+
+
+
 
     await pool.query(`UPDATE users SET is_online = ${isOnline} WHERE id = ${id}`)
 
     return res.json().status(200)
 })
 
+router.post('/:id/update-writing-status', async (req, res) => {
+    const { isWriting } = req.body
+
+    const { id } = req.params
+
+    await pool.query(`UPDATE users SET is_writing = ${isWriting} WHERE id = ${id}`)
+
+    return res.json().status(200)
+
+
+})
+
 router.get('/:id/get-user-status', async (req, res) => {
     const { id } = req.params
 
-    const { rows: [ { is_online } ] } = await pool.query(`SELECT * FROM users WHERE id = ${id}`)
+    const { rows: [ { is_online, is_writing } ] } = await pool.query(`SELECT * FROM users WHERE id = ${id}`)
 
-    return res.json({ isOnline: is_online })
+    return res.json({ isOnline: is_online, isWriting: is_writing })
 
+
+})
+
+let typingUserChats
+let typingUsersFromUserMessenger
+
+router.get('/get-user-statuses', async (req, res) => {
+    const { userId } = req.cookies
+
+    console.log('savedUsers in statuses endpoint', global.savedUsers && global.savedUsers.length)
+
+    if (!global.savedUsers) return res.json([])
+
+    const { rows: newUsers } = await pool.query(`SELECT * FROM users WHERE id IN (${global.savedUsers.map(u => u.id)})`)
+
+    const usersWithNewWritingStatus = newUsers.filter(u => u.is_writing !== global.savedUsers.find(su => su.id === u.id).is_writing)
+
+    global.savedUsers = newUsers
+
+    return res.json(usersWithNewWritingStatus)
+
+
+
+
+
+//     if (typingUserChats) {
+//         const usersToUpload = []
+//         const { rows: uploadedTypingUserChats} = await pool.query(`SELECT * FROM users WHERE id IN (${typingUserChats.flat(1).map(u => u.id)})`)
+//         uploadedTypingUserChats.sort((a, b) => a.id - b.id).map((u, i) => {
+//             if (u.is_writing !== typingUsersFromUserMessenger[i].is_writing) usersToUpload.push(u)
+//         })
+//
+//         return res.json(usersToUpload)
+//     }
+//
+//
+//
+//     const { rows: messages } = await pool.query(`SELECT * FROM messages WHERE
+// (from_user_id = ${userId} OR to_user_id = ${userId}) OR (from_user_id = ${id} OR ${id} = ANY(to_user_ids))
+// `)
+//
+//     let ids = []
+//     for (let i = 0; i < messages.length; i++) {
+//         messages[i].from_user_id
+//         if (messages[i].to_user_id) ids.push(messages[i].to_user_id)
+//         else ids.push(...messages[i].to_user_ids)
+//     }
+//
+//     ( { rows: typingUsersFromUserMessenger.sort((a, b) => a.id - b.id) } = await pool.query(`SELECT * FROM users WHERE id IN (${ids})`) )
+//
+//     typingUserChats = typingUsersFromUserMessenger.reduce((acc, user) => {
+//         const chatId = user.chat_id;
+//         if (!acc[chatId]) {
+//             acc[chatId] = [];
+//         }
+//         acc[chatId].push(user);
+//         return acc;
+//     }, {})
+//
+//
+//     return res.json(Object.values(typingUserChats))
+//
 
 })
 

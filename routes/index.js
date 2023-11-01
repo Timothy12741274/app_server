@@ -8,6 +8,8 @@ const authRouter = require('./auth')
 const postCommentRouter = require('./postComments')
 const commentCommentRouter = require('./commentComments')
 const commentRouter = require('./comments')
+const groupsAndUsersRouter = require('./groupsAndUsers')
+const groupsRouter = require('./groups')
 const Router = require('express').Router
 
 const router = new Router()
@@ -22,5 +24,7 @@ router.use('/auth', authRouter)
 router.use('/post_comments', postCommentRouter)
 router.use('/comment_comments', commentCommentRouter)
 router.use('/comments', commentRouter)
+router.use('/groups_and_users', groupsAndUsersRouter)
+router.use('/groups', groupsRouter)
 
 module.exports = router

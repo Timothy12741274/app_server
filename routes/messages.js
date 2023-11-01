@@ -29,21 +29,30 @@ router.get('/', async (req, res) => {
 router.get('/get-user-messages/:id', async (req, res) => {
     let { id } = req.params
 
-    const { rows: messages } = await pool.query(`SELECT * FROM messages WHERE (from_user_id = ${id} OR to_user_id = ${id})`)
+    const {rows: messages} = await pool.query(`
+SELECT * FROM messages WHERE 
+(from_user_id = ${id} OR to_user_id = ${id}) OR (from_user_id = ${id} OR ${id} = ANY(to_user_ids))
+`)
 
     return res.json(messages)
 })
 
 router.post('/', async (req, res) => {
-    const { time, text, from_user_id, to_user_id, isRead } = req.body
+    let { time, text, from_user_id /*to_user_id*/, isRead } = req.body
+
+    const ids = req.body.to_user_id ?? req.body.to_user_ids
+
+    const group_id = req.body.group_id ?? null
+
+    const isToUserId = !!req.body.to_user_id
     // const { time, text, fromUserId, toUserId } = req.body
 
-    const { rows: [ { isOnline} ] } = await pool.query(`SELECT * FROM users WHERE id = ${to_user_id}`)
+    // const { rows: [ { isOnline} ] } = await pool.query(`SELECT * FROM users WHERE id = ${to_user_id}`)
 
-    const query = `INSERT INTO messages (time, text, from_user_id, to_user_id, read) VALUES ($1, $2, $3, $4, $5) RETURNING id`
+    const query = `INSERT INTO messages (time, text, from_user_id, ${isToUserId ? 'to_user_id' : 'to_user_ids'}, group_id, read) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
     // const query = `INSERT INTO messages (time, text, from_user_id, to_user_id, read) VALUES ($1, $2, $3, $4, $5) RETURNING id`
 
-    const values = [time, text, from_user_id, to_user_id, isRead]
+    const values = [time, text, from_user_id, ids, group_id, isRead]
 
 /*    try {
         const result = await pool.query(query, values)
@@ -92,12 +101,15 @@ router.put('/:id', (req, res) => {
 router.get('/added-messages', async (req, res) => {
     // console.log('max', req.query.max_message_id, 'id', )
     const { rows } = await pool.query(`
-SELECT * FROM messages WHERE (from_user_id = ${req.cookies.userId} OR to_user_id = ${req.cookies.userId}) AND
-(id > ${req.query.max_message_id})
+SELECT * FROM messages WHERE 
+((from_user_id = ${req.cookies.userId} OR to_user_id = ${req.cookies.userId}) AND (id > ${req.query.max_message_id}))
+OR 
+((from_user_id = ${req.cookies.userId} OR ${req.cookies.userId} = ANY(to_user_ids)) AND (id > ${req.query.max_message_id}))
 `)
-    console.log(rows[0] && rows[0].id, '>', req.query.max_message_id)
 
     return res.json(rows).status(200)
 })
+
+
 
 module.exports = router
