@@ -2,6 +2,7 @@ const Router = require('express').Router
 const pool = require('../db')
 const {query} = require("express");
 const router = new Router()
+const path = require('path');
 
 router.get('/', async (req, res) => {
     let { firstUserId, secondUserId } = req.query
@@ -27,12 +28,18 @@ router.get('/', async (req, res) => {
 })
 
 router.get('/get-user-messages/:id', async (req, res) => {
-    let { id } = req.params
+    let id = req.cookies.userId
 
-    const {rows: messages} = await pool.query(`
+    // let { id } = req.params
+    let messages = []
+try {
+    ({rows: messages} = await pool.query(`
 SELECT * FROM messages WHERE 
 (from_user_id = ${id} OR to_user_id = ${id}) OR (from_user_id = ${id} OR ${id} = ANY(to_user_ids))
-`)
+`))
+} catch (e) {
+    console.log('error in file ', path.basename(__filename), e, 'TEST', )
+}
 
     return res.json(messages)
 })

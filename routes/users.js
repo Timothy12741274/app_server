@@ -3,6 +3,8 @@ const pool = require('../db')
 const multer = require('multer')
 // const {savedUsers} = require('../variables')
 const router = new Router()
+const path = require('path')
+const {idle_in_transaction_session_timeout} = require("pg/lib/defaults");
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -168,7 +170,6 @@ router.put('/update-recent', async (req, res) => {
     const { ids } = req.body
 
 
-    console.log('ids', ids)
     // await pool.query(`UPDATE users SET found_user_from_search_ids = ARRAY${ids.join(',')} WHERE id = ${Number(req.cookies.userId)}`)
     await pool.query(`UPDATE users SET found_chat_from_search_ids = $1 WHERE id = $2`, [JSON.stringify(ids), req.cookies.userId])
 
@@ -209,15 +210,19 @@ router.post('/:id/update-status', async (req, res) => {
     const { id } = req.params
 
     if (!isOnline) {
-        console.log(req.body.lastOnlineDate)
+        console.log(req.body.lastOnlineDate, 'A')
         const query = 'UPDATE users SET last_online_date = $1 WHERE id = $2'
         const values = [req.body.lastOnlineDate, id]
+        try {
+            await pool.query(query, values)
+        } catch (e) {
+            console.log(`Error in file ${path.basename(__filename)} at line ${error.stack.match(/:(\d+):\d+/)[1]}: ${error.message}`)
+        }
 
-        await pool.query(query, values)
     }
 
 
-
+    console.log(isOnline, id, 'YYY')
 
     await pool.query(`UPDATE users SET is_online = ${isOnline} WHERE id = ${id}`)
 
@@ -252,11 +257,15 @@ let typingUsersFromUserMessenger
 router.get('/get-user-statuses', async (req, res) => {
     const { userId } = req.cookies
 
-    console.log('savedUsers in statuses endpoint', global.savedUsers && global.savedUsers.length)
-
     if (!global.savedUsers) return res.json([])
 
-    const { rows: newUsers } = await pool.query(`SELECT * FROM users WHERE id IN (${global.savedUsers.map(u => u.id)})`)
+    const savedUserIds = global.savedUsers.map(u => u.id)
+
+    let newUsers = []
+
+    if (savedUserIds.length > 0) {
+        ({ rows: newUsers } = await pool.query(`SELECT * FROM users WHERE id IN (${savedUserIds})`))
+    }
 
     const usersWithNewWritingStatus = newUsers.filter(u => u.is_writing !== global.savedUsers.find(su => su.id === u.id).is_writing)
 

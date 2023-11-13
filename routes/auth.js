@@ -8,7 +8,7 @@ router.post('/', async (req, res) => {
 
 
 
-    const query = 'SELECT * FROM users WHERE email = $1'
+    const query = `SELECT * FROM users WHERE email = $1`
 
     const values = [ email ]
 
@@ -18,13 +18,13 @@ router.post('/', async (req, res) => {
         const {rows: [candidateResoult]} = await pool.query(query, values)
         candidate = candidateResoult
     } catch (e) {
-        return res.json({ message: 'User not found'}).status(401)
+        console.log(e)
+        return res.status(401).json({ message: 'User not found'})
     }
 
     if (candidate.password !== password) {
         return res.json({ message: 'Email or password is incorrect'}).status(401)
     }
-
     return res.json({id: candidate.id})
 
 

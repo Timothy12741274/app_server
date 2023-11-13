@@ -1,5 +1,6 @@
 const Router = require('express').Router
 const pool = require('../db')
+const path = require("path");
 // let {savedUsers} = require('../variables')
 const router = new Router()
 
@@ -16,15 +17,26 @@ router.get('/', async (req, res) => {
     //     console.log('b')
     //     return res.json([]).status(200)
     // }
-    const { rows: messages } = await pool.query(`SELECT * FROM messages WHERE from_user_id = ${id} OR to_user_id = ${id}`)
 
-    let ids = []
+    let messages = []
+    let users = []
+    let groups = []
+    let found_chat_from_search_ids = []
+
+    try {
+        ({ rows: messages } = await pool.query(`SELECT * FROM messages WHERE from_user_id = ${id} OR to_user_id = ${id}`))
+    } catch (e) {
+        console.log(`Error in file ${path.basename(__filename)} at line ${error.stack.match(/:(\d+):\d+/)[1]}: ${error.message}`)
+    }
+
+
+
+    let ids = [id]
 
     if (messages.length > 0) {
         for (let i = 0; i < messages.length; i++) {
             const toUserId = messages[i].to_user_id
-
-            if (ids.includes(toUserId) || ids.includes(messages[i].from_user_id)) continue
+            if (ids.includes(toUserId) && ids.includes(messages[i].from_user_id)) continue
 
             if (toUserId !== id) ids.push(toUserId)
             else ids.push(messages[i].from_user_id)
@@ -33,17 +45,28 @@ router.get('/', async (req, res) => {
         for (let i = 0; i < ids.length; i++) {
             ids[i] = Number(ids[i])
         }
+        console.log(ids, 'ids')
     }
-
     try {
         await pool.query(`UPDATE users SET is_online = true WHERE id = ${req.cookies.userId}`)
     } finally {
-        let {rows: users} = await pool.query(`SELECT * FROM users WHERE id IN (${ids}) OR id = ${id}`)
+            try {
+                ({rows: users} = await pool.query(`SELECT * FROM users WHERE id = ANY($1)`, [ids]))
+            } catch (e) {
+                console.log('failed', e)
+            }
 
-        let {rows: groups} = await pool.query(`SELECT * FROM groups WHERE ${id} = ANY(user_ids)`)
-        console.log('groups1', groups)
+        try {
+            ({rows: groups} = await pool.query(`SELECT * FROM groups WHERE ${id} = ANY(user_ids)`))
+        } catch (e) {}
 
-        const {rows: [{found_chat_from_search_ids}]} = await pool.query(`SELECT * FROM users WHERE id = ${Number(req.cookies.userId)}`)
+        try {
+            ({rows: [{found_chat_from_search_ids}]} = await pool.query(`SELECT * FROM users WHERE id = ${Number(req.cookies.userId)}`))
+            // ({rows: [{found_chat_from_search_ids}]} = await pool.query(`SELECT * FROM users WHERE id = ${Number(req.cookies.userId)}`))
+        } catch (e) {
+            console.log('found_chats adding failed')
+        }
+
 
         let found_user_from_search_ids = []
         let found_group_from_search_ids = []
@@ -51,7 +74,7 @@ router.get('/', async (req, res) => {
         if (found_chat_from_search_ids)
             for (let i = 0; i < found_chat_from_search_ids.length; i++) {
                 const currChat = found_chat_from_search_ids[i]
-                if (currChat.isUser) found_user_from_search_ids.push(currChat.id)
+                if (!currChat.is_group) found_user_from_search_ids.push(currChat.id)
                 else found_group_from_search_ids.push(currChat.id)
             }
 
@@ -86,7 +109,6 @@ router.get('/', async (req, res) => {
         // }
         if (found_group_from_search_ids.length !== 0) {
             const {rows: found_groups_from_search} = await pool.query(`SELECT * FROM groups WHERE id IN (${found_group_from_search_ids})`)
-
             groups.push(...found_groups_from_search)
 
             let groupIds = new Set()
@@ -99,17 +121,17 @@ router.get('/', async (req, res) => {
                 return false
             })
         }
-        console.log('groups2', groups)
 
         const lackingUserIds = groups.map(g => g.user_ids.filter(id => !users.find(u => u.id === id))).flat(1)
 
-        const { rows: lackingUsers } = await pool.query(`SELECT * FROM users WHERE id IN (${lackingUserIds})`)
+        let lackingUsers = []
 
+        if (lackingUserIds > 0) {
+            ({ rows: lackingUsers } = await pool.query(`SELECT * FROM users WHERE id IN (${lackingUserIds})`))
+            }
         users.push(...lackingUsers)
 
         global.savedUsers = users
-
-        console.log('savedUsers in group_and_users endpoint', global.savedUsers && global.savedUsers.length)
 
         return res.json({users, groups})
     }
