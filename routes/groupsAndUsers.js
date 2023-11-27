@@ -7,6 +7,7 @@ const router = new Router()
 
 router.get('/', async (req, res) => {
     let id = Number(req.cookies.userId)
+    let userId = req.cookies.userId
 
     let foundMessages = []
     // try {
@@ -24,8 +25,8 @@ router.get('/', async (req, res) => {
     let found_chat_from_search_ids = []
 
     try {
-        ({ rows: messages } = await pool.query(`SELECT * FROM messages WHERE from_user_id = ${id} OR to_user_id = ${id}`))
-    } catch (e) {
+        ({ rows: messages } = await pool.query(`SELECT * FROM messages WHERE from_user_id = ${id} OR to_user_id = ${id} OR ${id} = ANY(to_user_ids)`))
+    } catch (error) {
         console.log(`Error in file ${path.basename(__filename)} at line ${error.stack.match(/:(\d+):\d+/)[1]}: ${error.message}`)
     }
 
@@ -36,16 +37,24 @@ router.get('/', async (req, res) => {
     if (messages.length > 0) {
         for (let i = 0; i < messages.length; i++) {
             const toUserId = messages[i].to_user_id
-            if (ids.includes(toUserId) && ids.includes(messages[i].from_user_id)) continue
+            if (!toUserId) {
+                if (messages[i].from_user_id !== id || ids.includes(messages[i].from_user_id)) ids.push(messages[i].from_user_id)
+                for (let j = 0; j < messages[i].to_user_ids.length; j++) {
+                    if (ids.includes(messages[i].to_user_ids[j]) || messages[i].to_user_ids[j] === id) continue
+                    ids.push(messages[i].to_user_ids[j])
+                }
+            } else {
+                if (ids.includes(toUserId) && ids.includes(messages[i].from_user_id)) continue
 
-            if (toUserId !== id) ids.push(toUserId)
-            else ids.push(messages[i].from_user_id)
+                if (toUserId !== id && !ids.includes(toUserId)) ids.push(toUserId)
+                else ids.push(messages[i].from_user_id)
+            }
+
         }
 
         for (let i = 0; i < ids.length; i++) {
             ids[i] = Number(ids[i])
         }
-        console.log(ids, 'ids')
     }
     try {
         await pool.query(`UPDATE users SET is_online = true WHERE id = ${req.cookies.userId}`)
@@ -131,7 +140,8 @@ router.get('/', async (req, res) => {
             }
         users.push(...lackingUsers)
 
-        global.savedUsers = users
+        if (!global.savedUsers) global.savedUsers = {[userId]:users}
+        else if (!global.savedUsers[userId]) global.savedUsers[userId] = users
 
         return res.json({users, groups})
     }

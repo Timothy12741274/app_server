@@ -143,7 +143,7 @@ router.get('/get-users/:id', async (req, res) => {
             return false
         })
     }
-    global.savedUsers = users
+    global.savedUsers[Number(req.cookies.userId)] = users
     console.log('savedUsers', global.savedUsers)
     return res.json({ users, groups })
 
@@ -215,18 +215,23 @@ router.post('/:id/update-status', async (req, res) => {
         const values = [req.body.lastOnlineDate, id]
         try {
             await pool.query(query, values)
-        } catch (e) {
+        } catch (error) {
             console.log(`Error in file ${path.basename(__filename)} at line ${error.stack.match(/:(\d+):\d+/)[1]}: ${error.message}`)
         }
 
     }
 
 
-    console.log(isOnline, id, 'YYY')
+    // console.log(isOnline, id, 'YYY')
 
-    await pool.query(`UPDATE users SET is_online = ${isOnline} WHERE id = ${id}`)
+    try {
+        await pool.query(`UPDATE users SET is_online = ${isOnline} WHERE id = ${id}`)
 
-    return res.json().status(200)
+        return res.json().status(200)
+    } catch (error) {
+        console.log(`Error in file ${path.basename(__filename)} at line ${error.stack.match(/:(\d+):\d+/)[1]}: ${error.message}`)
+    }
+
 })
 
 router.post('/:id/update-writing-status', async (req, res) => {
@@ -259,7 +264,10 @@ router.get('/get-user-statuses', async (req, res) => {
 
     if (!global.savedUsers) return res.json([])
 
-    const savedUserIds = global.savedUsers.map(u => u.id)
+    // console.log('xxx', userId, global.savedUsers)
+
+    // console.log(global.savedUsers, userId, '777')
+    const savedUserIds = global.savedUsers[userId].map(u => u.id)
 
     let newUsers = []
 
@@ -267,11 +275,22 @@ router.get('/get-user-statuses', async (req, res) => {
         ({ rows: newUsers } = await pool.query(`SELECT * FROM users WHERE id IN (${savedUserIds})`))
     }
 
-    const usersWithNewWritingStatus = newUsers.filter(u => u.is_writing !== global.savedUsers.find(su => su.id === u.id).is_writing)
+    const usersWithNewStatus = newUsers.filter(u => {
+        const userFromSavedMessages = global.savedUsers[userId].find(su => su.id === u.id)
 
-    global.savedUsers = newUsers
-
-    return res.json(usersWithNewWritingStatus)
+        return (u.is_writing !== userFromSavedMessages.is_writing) || (u.is_online !== userFromSavedMessages.is_online)
+    })
+    // console.log(global.savedUsers, newUsers, usersWithNewStatus)
+    //  console.log(global.savedUsers.map(u => ({id: u.id, is_online: u.is_online})), newUsers.map(u => ({id: u.id, is_online: u.is_online})), usersWithNewStatus.length)
+    if (usersWithNewStatus.length > 0 && Number(userId) === 1) console.log('worked', usersWithNewStatus.map(u => ({name: u.username, id: u.id, is_online: u.is_online, is_writing: u.is_writing})), newUsers.map(u => ({name: u.username, id: u.id, is_online: u.is_online})))
+    if (Number(userId) === 1) console.log('default', global.savedUsers[userId].map(u => ({name: u.username, id: u.id, is_online: u.is_online})))
+    // console.log('newUsers', newUsers)
+    console.log(userId, 'userId')
+    if (Number(userId) === 1) console.log('olddefault', global.savedUsers[userId].map(u => ({name: u.username, id: u.id, is_online: u.is_online, is_writing: u.is_writing})))
+    global.savedUsers[userId] = newUsers
+    // console.log('default', global.savedUsers.map(u => ({name: u.username, id: u.id, is_online: u.is_online, is_writing: u.is_writing})))
+    // if (usersWithNewStatus.length > 0 && console.log(usersWithNewStatus))
+    return res.json(usersWithNewStatus)
 
 
 
