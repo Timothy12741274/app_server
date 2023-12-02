@@ -267,6 +267,7 @@ router.get('/get-user-statuses', async (req, res) => {
     // console.log('xxx', userId, global.savedUsers)
 
     // console.log(global.savedUsers, userId, '777')
+    // console.log(savedUsers, userId)
     const savedUserIds = global.savedUsers[userId].map(u => u.id)
 
     let newUsers = []
@@ -334,6 +335,16 @@ router.get('/get-user-statuses', async (req, res) => {
 //     return res.json(Object.values(typingUserChats))
 //
 
+})
+
+router.get('/find', async (req, res) => {
+    const { t } = req.params
+
+    let users = []
+
+    try { users = await pool.query(`SELECT * FROM users WHERE username LIKE '%${t}%' LIMIT 5;`)} catch (e) {}
+
+    return res.json({ users })
 })
 
 module.exports = router

@@ -44,6 +44,61 @@ SELECT * FROM messages WHERE
     return res.json(messages)
 })
 
+router.post('/resend', async (req, res) => {
+    const { messages, items, time } = req.body
+
+    // const itemIds = items.map(u => {u.id, )
+    const itemIds = items.map(i => ({ isGroup: !!i.name, id: i.id }))
+
+    let currentUsers = []
+    let currentGroups = []
+
+    const userIds = items.filter(i => !i.isGroup).map(u => u.id)
+    // const groupIds = items.filter(i => i.isGroup).map(g => g.id)
+    const userIdsOfEveryGroup = items.filter(i => !!i.name).map(g => g.user_ids)
+
+    const groupUserIds = [].concat(...userIdsOfEveryGroup)
+
+    const allUserIds = [...userIds, ...groupUserIds]
+
+    try { ( { rows: currentUsers } = await pool.query(`SELECT * FROM users WHERE id IN(${allUserIds})`)) } catch (e) {
+        console.log(e, 'an error has occurred')
+    }
+
+    try { ( { rows: currentGroups } = await pool.query(`SELECT * FROM users WHERE id IN(${groupUserIds})`)) } catch (e) {}
+
+    const currentItems = [...currentUsers, ...currentGroups]
+
+
+
+try {
+    for (let i = 0; i < items.length; i++) {
+        for (let j = 0; j < messages.length; j++) {
+
+
+            if (!itemIds[i].isGroup) {
+                // console.log(currentUsers, items[i], 'THIS', itemIds[i].isGroup, items[i])
+                const values = [time, messages[j].text, Number(req.cookies.userId), items[i].id, currentUsers.find(u => u.id === items[i].id).is_online, true, messages[j].message_to_answer_id]
+                await pool.query(`INSERT INTO messages 
+(time, text, from_user_id, to_user_id, read, resent, ${messages[j].messageToAnswerId ? 'message_to_answer_id' : ''}) 
+VALUES ($1, $2, $3, $4, $5, $6, $7)`, values)
+            } else {
+                const values = [time, messages[j].text, Number(req.cookies.userId), items[i].user_ids.filter(id => id !== Number(req.cookies.userId)), items[i].id, !currentUsers.find(u => !u.read && userIdsOfEveryGroup[i].includes(u.id)), true, messages[j].message_to_answer_id]
+                console.log(values, 'v')
+                await pool.query(`INSERT INTO messages 
+(time, text, from_user_id, to_user_ids, group_id, read, resent, ${messages[j].message_to_answer_id ? 'message_to_answer_id' : ''}) 
+VALUES ($1, $2, $3, $4, $5, $6, $7)`, values)
+            }
+        }
+    }
+} catch (e) {
+    console.log(e, 'actual error')
+    return res.json({error: e}).status(500)
+}
+
+return res.json().status(200)
+})
+
 router.post('/', async (req, res) => {
     let { time, text, from_user_id /*to_user_id*/, isRead } = req.body
 
@@ -55,11 +110,9 @@ router.post('/', async (req, res) => {
     // const { time, text, fromUserId, toUserId } = req.body
 
     // const { rows: [ { isOnline} ] } = await pool.query(`SELECT * FROM users WHERE id = ${to_user_id}`)
-
-    const query = `INSERT INTO messages (time, text, from_user_id, ${isToUserId ? 'to_user_id' : 'to_user_ids'}, group_id, read) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+    const query = `INSERT INTO messages (time, text, from_user_id, ${isToUserId ? 'to_user_id' : 'to_user_ids'}, group_id, read, ${req.body.messageToAnswerId ? 'message_to_answer_id' : ''}) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`
     // const query = `INSERT INTO messages (time, text, from_user_id, to_user_id, read) VALUES ($1, $2, $3, $4, $5) RETURNING id`
-
-    const values = [time, text, from_user_id, ids, group_id, isRead]
+    const values = [time, text, from_user_id, ids, group_id, isRead, req.body.messageToAnswerId]
 
 /*    try {
         const result = await pool.query(query, values)
@@ -97,6 +150,8 @@ router.post('/', async (req, res) => {
 
 })
 
+
+
 router.put('/:id', (req, res) => {
     const { id } = req.params
 
@@ -115,6 +170,22 @@ OR
 `)
 
     return res.json(rows).status(200)
+})
+
+router.post('/delete', async (req, res) => {
+    const { messages, fromEveryone } = req.body
+
+    const messageIds = messages.map(m => m.id)
+
+    try {
+        await pool.query(`UPDATE messages SET ${fromEveryone ? 'is_deleted' : 'is_deleted_from_me'} = true WHERE id IN (${messageIds})`)
+    } catch (e) {
+        console.log('HERE', e, messageIds, messages)
+        return res.json({error: e}).status(500)
+    }
+
+    return res.json().status(200)
+
 })
 
 
