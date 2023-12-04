@@ -3,6 +3,18 @@ const pool = require('../db')
 const {query} = require("express");
 const router = new Router()
 const path = require('path');
+const multer = require('multer')
+const fs = require('fs/promises')
+
+
+const storage = multer.diskStorage({
+    destination: 'downloads/message-photos/',
+    filename: function (req, file, cb) {
+        cb(null, file.originalname)
+    }
+})
+
+const upload = multer({ storage })
 
 router.get('/', async (req, res) => {
     let { firstUserId, secondUserId } = req.query
@@ -99,40 +111,87 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)`, values)
 return res.json().status(200)
 })
 
-router.post('/', async (req, res) => {
+router.post('/', upload.array('photos'), async (req, res) => {
     let { time, text, from_user_id /*to_user_id*/, isRead } = req.body
 
-    const ids = req.body.to_user_id ?? req.body.to_user_ids
 
-    const group_id = req.body.group_id ?? null
+    let photos  = req.files
+
+    // let photoFilenames = []
+
+
+    let ids = req.body.to_user_id ?? req.body.to_user_ids
+
+    console.log(ids)
+
+
+
+    let group_id = req.body.group_id ?? null
 
     const isToUserId = !!req.body.to_user_id
     // const { time, text, fromUserId, toUserId } = req.body
 
+    let photoFilenames = []
+
+    if (photos.length !== 0) {
+        for (let i = 0; i < req.files.length; i++) {
+            const originalName = req.files[i].originalname
+            const photoFilename = `${Date.now()}_${originalName}`
+            const photoFilePath = path.join('downloads/message-photos', photoFilename)
+            photoFilenames.push(photoFilename)
+            fs.rename(`downloads/message-photos/${originalName}`, photoFilePath)
+
+        }
+    } else {
+        photos = []
+    }
+
+    from_user_id = Number(from_user_id)
+    ids = ids.split(',').map(id => Number(id))
+    group_id = Number(group_id)
+    isRead = JSON.parse(isRead)
+    const messageToAnswerId = req.body.messageToAnswerId ? Number(req.body.messageToAnswerId) : 0
+    // photoFilenames = JSON.stringify(photoFilenames)
+    if (!text) text = ''
+
+
+
+    // else photoFilenames = photos.map(p => p.)
+
     // const { rows: [ { isOnline} ] } = await pool.query(`SELECT * FROM users WHERE id = ${to_user_id}`)
-    const query = `INSERT INTO messages (time, text, from_user_id, ${isToUserId ? 'to_user_id' : 'to_user_ids'}, group_id, read, ${req.body.messageToAnswerId ? 'message_to_answer_id' : ''}) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`
-    // const query = `INSERT INTO messages (time, text, from_user_id, to_user_id, read) VALUES ($1, $2, $3, $4, $5) RETURNING id`
-    const values = [time, text, from_user_id, ids, group_id, isRead, req.body.messageToAnswerId]
+    try {
+        const query = `INSERT INTO messages (time, text, from_user_id, ${isToUserId ? 'to_user_id' : 'to_user_ids'}, group_id, read, photos, message_to_answer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
+        // const query = `INSERT INTO messages (time, text, from_user_id, ${isToUserId ? 'to_user_id' : 'to_user_ids'}, group_id, read, photos, ${req.body.messageToAnswerId ? 'message_to_answer_id' : ''}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`
 
-/*    try {
-        const result = await pool.query(query, values)
-    } finally {
-        const { rows } = await pool.query(`SELECT * FROM messages WHERE id = ${(здесь нужен result)}`)
 
-        return res.json(rows).status(200)
-    }*/
+        // const query = `INSERT INTO messages (time, text, from_user_id, to_user_id, read) VALUES ($1, $2, $3, $4, $5) RETURNING id`
+        const values = [time, text, from_user_id, ids, group_id, isRead, photoFilenames, messageToAnswerId]
 
-/*    pool.query({ query, values }, async ( { rows: [ { id } ] } ) => {
-        const { rows: [ newMessage ] } = await pool.query(`SELECT * FROM messages WHERE id = ${id}`, values)
-        console.log(newMessage)
-        return res.json(newMessage).status(200)
-    })*/
+        console.log(values, 'IDS')
 
-    const { rows: [ { id } ] } = await pool.query(query, values)
+        /*    try {
+                const result = await pool.query(query, values)
+            } finally {
+                const { rows } = await pool.query(`SELECT * FROM messages WHERE id = ${(здесь нужен result)}`)
 
-    const { rows: [ newMessage ] } = await pool.query(`SELECT * FROM messages WHERE id = ${id}`)
+                return res.json(rows).status(200)
+            }*/
 
-    return res.json(newMessage).status(200)
+        /*    pool.query({ query, values }, async ( { rows: [ { id } ] } ) => {
+                const { rows: [ newMessage ] } = await pool.query(`SELECT * FROM messages WHERE id = ${id}`, values)
+                console.log(newMessage)
+                return res.json(newMessage).status(200)
+            })*/
+
+        const {rows: [{id}]} = await pool.query(query, values)
+
+        const {rows: [newMessage]} = await pool.query(`SELECT * FROM messages WHERE id = ${id}`)
+
+        return res.json({message: newMessage}).status(200)
+    } catch (e) {
+        console.log(e, 'ERROR HERE')
+        return res.json().status(500)
+    }
     // pool.query({ query, values }, async ( { rows: [ { id } ] } ) => {
     //     const { rows: [ newMessage ] } = await pool.query(`SELECT * FROM messages WHERE id = ${id}`, values)
     //     console.log(newMessage)
@@ -152,13 +211,13 @@ router.post('/', async (req, res) => {
 
 
 
-router.put('/:id', (req, res) => {
-    const { id } = req.params
-
-    pool.query(`UPDATE messages SET read = true WHERE id = ${id}`)
-
-    return res.json().status(200)
-})
+// router.put('/:id', (req, res) => {
+//     const { id } = req.params
+//
+//     pool.query(`UPDATE messages SET read = true WHERE id = ${id}`)
+//
+//     return res.json().status(200)
+// })
 
 router.get('/added-messages', async (req, res) => {
     // console.log('max', req.query.max_message_id, 'id', )
@@ -186,6 +245,53 @@ router.post('/delete', async (req, res) => {
 
     return res.json().status(200)
 
+})
+
+router.put('/react', async (req, res) => {
+    const { messageId, emoji, addEmoji } = req.body
+
+    const { rows : [ { emojis, reacted_user_ids } ] } = await pool.query(`SELECT * FROM messages WHERE id = ${messageId}`)
+
+    const index = emojis.findIndex(e => e.hasOwnProperty(emoji))
+    const indexOfId = reacted_user_ids.findIndex(obj => Object.keys(obj)[0] === req.cookies.userId)
+
+    if (addEmoji) {
+        if (indexOfId) {
+            const emojiToDelete = reacted_user_ids[indexOfId][Object.keys(reacted_user_ids[indexOfId])[0]]
+            const emojiToDeleteIndex = emojis.findIndex(e => e.hasOwnProperty(emojiToDelete))
+
+            if (emojis[emojiToDeleteIndex][emojiToDelete] === 1) {
+                emojis.splice(indexOfId, 1)
+            } else {
+                emojis[emojiToDeleteIndex][emojiToDelete] = emojis[emojiToDeleteIndex][emojiToDelete] - 1
+            }
+
+            reacted_user_ids.splice(indexOfId, 1)
+        }
+        reacted_user_ids.push( { [Number(req.cookies.userId)]: emoji } )
+
+        if (index !== -1) {
+            emojis[index][emoji] = emojis[index][emoji] + 1
+            emojis.find(e => e === emoji)
+        } else {
+            emojis.push({ [emoji]: 1 })
+        }
+
+    } else {
+        reacted_user_ids.splice(indexOfId, 1)
+
+        if (emojis[index][emoji] === 1) {
+            emojis.splice(index, 1)
+        } else {
+            emojis[index][emoji] = emojis[index][emoji] - 1
+        }
+
+    }
+    const values = [JSON.stringify(emojis), messageId]
+    // console.log(JSON.stringify(emojis), 'here')
+    const { rows: [ message ]} = await pool.query(`UPDATE messages SET emojis = $1, reacted_user_ids =  WHERE id = $2 RETURNING *`, values)
+
+    return res.json(message).status(200)
 })
 
 

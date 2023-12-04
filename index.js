@@ -16,8 +16,10 @@ app.use(cors({
 }))
 
 const dir = path.join(__dirname, 'uploads');
+const dir2 = path.join(__dirname, 'downloads/message-photos')
 
 app.use(express.static(dir))
+app.use(express.static(dir2))
 
 app.use('/', router)
 
